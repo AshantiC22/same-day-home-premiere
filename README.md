@@ -24,6 +24,17 @@ PostgreSQL 16, Docker, Python, SQLAlchemy 2, Alembic, pytest.
 
 Planned: FastAPI, React, TypeScript, Stripe, and a deployed demo.
 
+## Documentation
+
+The planning and design work is in [`docs/`](docs/README.md):
+
+- [Project scope](docs/scope.md): what the product is and what V1 includes
+- [System design](docs/design.md): architecture, the access check, API, and screens
+- [Data model](docs/data-model.md) and [schema.sql](docs/schema.sql): the tables and the rules the database enforces
+- [Security and capacity](docs/security-and-capacity.md): what V1 defends against, and load estimates
+- [Design decisions](docs/decisions.md): six choices, with the alternatives I considered
+- [Build plan](docs/build-plan.md): seven slices and the tests that prove the product
+
 ## Run it locally
 
 You need Python 3.11+, Docker and Git.
