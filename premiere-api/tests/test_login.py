@@ -60,3 +60,17 @@ def test_login_unknown_email_gets_the_same_401(client):
 def test_login_missing_password_is_422(client):
     response = client.post("/api/auth/signup", json={"email": "a@b.com"})
     assert response.status_code == 422
+
+def test_five_wrong_passwords_lock_the_account(client, user):
+    for _ in range(5):
+        response = client.post(
+            "/api/auth/login", json={"email": "fan@example.com", "password": "wrong"}
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/api/auth/login", json={"email": "fan@example.com", "password": "devpass1"}
+    )
+    assert response.status_code == 429
+    assert response.json() == {"detail": "ACCOUNT_LOCKED"}
+

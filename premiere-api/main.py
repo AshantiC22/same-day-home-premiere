@@ -14,6 +14,8 @@ from security import hash_password, verify_password
 app = FastAPI(title="Same-Day Home Premiere API")
 
 SESSION_DAYS = 7
+MAX_ATTEMPTS = 5
+LOCK_MINUTES = 15
 
 
 @app.get("/api/health")
@@ -62,30 +64,34 @@ class LoginIn(BaseModel):
 def login(body: LoginIn, response: Response, db: Session = Depends(get_db)):
     # 1. Clean the email (same as signup).
     email = body.email.strip().lower()
-
     # 2. Find the user with that email.
     user = db.scalar(select(User).where(User.email == email))
-
-    # 3. No user OR wrong password: the same 401 for both.
-    if user is None or not verify_password(body.password, user.password_hash):
+    now = datetime.now(timezone.utc)
+    # A. Locked? Answer 429 before looking at the password.
+    if user is not None and user.locked_until is not None and user.locked_until > now:
+        raise HTTPException(status_code=429, detail="ACCOUNT_LOCKED")
+    # 3. Is the login good?
+    ok = user is not None and verify_password(body.password, user.password_hash)
+    # B. Bad login: count it, maybe lock, SAVE, then answer 401.
+    if not ok:
+        if user is not None:
+            user.failed_attempts += 1
+            if user.failed_attempts >= MAX_ATTEMPTS:
+                user.locked_until = now + timedelta(minutes=LOCK_MINUTES)
+                user.failed_attempts = 0
+            db.commit()
         raise HTTPException(status_code=401, detail="INVALID_CREDENTIALS")
-
+    # C. Good login: wipe the counter and any old lock.
+    user.failed_attempts = 0
+    user.locked_until = None
     # 4. Make a random session id.
     session_id = secrets.token_urlsafe(32)
-
-    # 5. Save the session row.
+    # 5. Save a LoginSession row that expires in 7 days.
     expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
     db.add(LoginSession(id=session_id, user_id=user.id, expires_at=expires_at))
     db.commit()
-
-    # 6. Put the id in an HttpOnly cookie.
-    response.set_cookie(
-        "session_id",
-        session_id,
-        httponly=True,
-        samesite="lax",
-        max_age=SESSION_DAYS * 24 * 60 * 60,
-    )
-
-    # 7. Answer with the user's id and email.
+    # 6. Set the cookie (HttpOnly).
+    response.set_cookie("session_id", session_id, httponly=True, samesite="lax",
+                        max_age=SESSION_DAYS * 24 * 60 * 60)
+    # 7. Answer with id and email.
     return {"id": user.id, "email": user.email}
