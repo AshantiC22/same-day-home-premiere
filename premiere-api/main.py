@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Response, Cookie
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -95,3 +95,41 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)):
                         max_age=SESSION_DAYS * 24 * 60 * 60)
     # 7. Answer with id and email.
     return {"id": user.id, "email": user.email}
+
+def get_current_user(
+    session_id: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+):
+    # 1. No cookie at all: answer 401.
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="NOT_LOGGED_IN")
+    # 2. Find the session row with that id.
+    row = db.scalar(select(LoginSession).where(LoginSession.id == session_id))
+    # 3. No row, or it has expired: answer 401.
+    if row is None or row.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="NOT_LOGGED_IN")
+    # 4. Find the user and hand it back.
+    return db.get(User, row.user_id)
+
+
+@app.get("/api/me")
+def me(user: User = Depends(get_current_user)):
+    return {"id": user.id, "email": user.email, "role": user.role}
+
+
+@app.post("/api/auth/logout")
+def logout(
+    response: Response,
+    session_id: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+):
+    # 1. If there is a cookie, delete that session row.
+    if session_id is not None:
+        row = db.scalar(select(LoginSession).where(LoginSession.id == session_id))
+        if row is not None:
+            db.delete(row)
+            db.commit()
+    # 2. Tell the browser to forget the cookie.
+    response.delete_cookie("session_id")
+    # 3. Answer.
+    return {"ok": True}

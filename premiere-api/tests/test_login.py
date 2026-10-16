@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
 
 from database import get_db
 from main import app
@@ -73,4 +74,60 @@ def test_five_wrong_passwords_lock_the_account(client, user):
     )
     assert response.status_code == 429
     assert response.json() == {"detail": "ACCOUNT_LOCKED"}
+
+def test_expired_lock_lets_you_log_in(client, session, user):
+    user.locked_until = datetime.now(timezone.utc) - timedelta(minutes=1)
+    session.commit()
+
+    response = client.post(
+        "/api/auth/login", json={"email": "fan@example.com", "password": "devpass1"}
+    )
+    assert response.status_code == 200
+
+    session.refresh(user)
+    assert user.locked_until is None
+
+def log_in(client):
+    response = client.post(
+        "/api/auth/login", json={"email": "fan@example.com", "password": "devpass1"}
+    )
+    assert response.status_code == 200
+
+
+def test_me_without_cookie_is_401(client):
+    response = client.get("/api/me")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "NOT_LOGGED_IN"}
+
+
+def test_me_after_login_returns_the_user(client, user):
+    log_in(client)
+    response = client.get("/api/me")
+    assert response.status_code == 200
+    assert response.json() == {"id": user.id, "email": "fan@example.com", "role": "user"}
+
+
+def test_me_with_expired_session_is_401(client, session, user):
+    log_in(client)
+    row = session.scalar(select(LoginSession).where(LoginSession.user_id == user.id))
+    row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    session.commit()
+
+    response = client.get("/api/me")
+    assert response.status_code == 401
+
+
+def test_logout_ends_the_session(client, session, user):
+    log_in(client)
+    response = client.post("/api/auth/logout")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    assert client.get("/api/me").status_code == 401
+    assert session.scalar(select(LoginSession).where(LoginSession.user_id == user.id)) is None
+
+
+def test_logout_without_cookie_is_ok(client):
+    response = client.post("/api/auth/logout")
+    assert response.status_code == 200
 
