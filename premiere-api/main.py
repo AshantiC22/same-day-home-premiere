@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from models import User
@@ -35,9 +36,13 @@ def signup(body: SignupIn, db: Session = Depends(get_db)):
     # 4. Build a new User with the HASHED password.
     user = User(email=email, password_hash=hash_password(body.password))
 
-    # 5. Stage it, then save it.
+    # 5. Stage it, then try to save it.
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="EMAIL_TAKEN")
 
     # 6. Answer with id and email. Never the password.
     return {"id": user.id, "email": user.email}
