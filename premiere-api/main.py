@@ -279,6 +279,10 @@ def playback(
     if purchase is None:
         raise HTTPException(status_code=403, detail="NOT_PURCHASED")
     # 4. Past window_ends_at? 410 WINDOW_ENDED.
+    if now >= premiere.window_ends_at:
+        raise HTTPException(status_code=410, detail="WINDOW_ENDED")
     # 5. Before starts_at? 403 PREMIERE_NOT_STARTED.
+    if now < premiere.starts_at:
+        raise HTTPException(status_code=403, detail="PREMIERE_NOT_STARTED")
     # 6. Answer {"allowed": True} for now.
     return {"allowed": True}
