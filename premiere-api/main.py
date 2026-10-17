@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import LoginSession, User
+from models import LoginSession, Movie, Premiere, User
 from security import hash_password, verify_password
 
 app = FastAPI(title="Same-Day Home Premiere API")
@@ -133,3 +133,30 @@ def logout(
     response.delete_cookie("session_id")
     # 3. Answer.
     return {"ok": True}
+
+@app.get("/api/premieres")
+def list_premieres(db: Session = Depends(get_db)):
+    # 1. What time is it now (UTC)?
+    now = datetime.now(timezone.utc)
+    # 2. Premieres joined to their movie: not cancelled, window not over, soonest first.
+    rows = db.execute(
+        select(Premiere, Movie)
+        .join(Movie, Premiere.movie_id == Movie.id)
+        .where(Premiere.cancelled_at.is_(None))
+        .where(Premiere.window_ends_at > now)
+        .order_by(Premiere.starts_at)
+    ).all()
+    # 3. One dictionary per row, with a computed state.
+    return [
+        {
+            "id": p.id,
+            "title": m.title,
+            "synopsis": m.synopsis,
+            "starts_at": p.starts_at,
+            "window_ends_at": p.window_ends_at,
+            "price_cents": p.price_cents,
+            "currency": p.currency,
+            "state": "UPCOMING" if now < p.starts_at else "LIVE",
+        }
+        for p, m in rows
+    ]
