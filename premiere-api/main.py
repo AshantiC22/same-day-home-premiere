@@ -1,14 +1,14 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Response, Cookie
-from pydantic import BaseModel
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import LoginSession, Movie, Premiere, User
+from models import AuditLog, LoginSession, Movie, Premiere, User
 from security import hash_password, verify_password
 
 app = FastAPI(title="Same-Day Home Premiere API")
@@ -16,6 +16,7 @@ app = FastAPI(title="Same-Day Home Premiere API")
 SESSION_DAYS = 7
 MAX_ATTEMPTS = 5
 LOCK_MINUTES = 15
+PREMIERE_WINDOW_DAYS = 7
 
 
 @app.get("/api/health")
@@ -96,6 +97,7 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)):
     # 7. Answer with id and email.
     return {"id": user.id, "email": user.email}
 
+
 def get_current_user(
     session_id: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
@@ -134,6 +136,7 @@ def logout(
     # 3. Answer.
     return {"ok": True}
 
+
 @app.get("/api/premieres")
 def list_premieres(db: Session = Depends(get_db)):
     # 1. What time is it now (UTC)?
@@ -160,3 +163,96 @@ def list_premieres(db: Session = Depends(get_db)):
         }
         for p, m in rows
     ]
+
+
+def require_admin(user: User = Depends(get_current_user)):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="ADMIN_ONLY")
+    return user
+
+
+class MovieIn(BaseModel):
+    title: str = Field(min_length=1)
+    movie_length: int = Field(gt=0)
+    synopsis: str | None = None
+
+
+@app.post("/api/admin/movies", status_code=201)
+def create_movie(
+    body: MovieIn,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    # 1. Build the movie and stage it.
+    movie = Movie(title=body.title, movie_length=body.movie_length, synopsis=body.synopsis)
+    db.add(movie)
+    # 2. flush() sends the INSERT now (so movie.id exists) but does not save for good.
+    db.flush()
+    # 3. Record who did it, then save the movie and the audit row together.
+    db.add(AuditLog(admin_id=admin.id, action="movie.create", target_id=movie.id))
+    db.commit()
+    return {"id": movie.id, "title": movie.title}
+
+
+class PremiereIn(BaseModel):
+    movie_id: int
+    starts_at: datetime
+    window_ends_at: datetime | None = None
+    display_time_zone: str
+    price_cents: int = Field(ge=0)
+
+
+@app.post("/api/admin/premieres", status_code=201)
+def create_premiere(
+    body: PremiereIn,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    # 1. Times must carry a timezone (we store UTC).
+    if body.starts_at.tzinfo is None or (
+        body.window_ends_at is not None and body.window_ends_at.tzinfo is None
+    ):
+        raise HTTPException(status_code=422, detail="TIMEZONE_REQUIRED")
+    # 2. No window given: default to 7 days after the start.
+    window_ends_at = body.window_ends_at or body.starts_at + timedelta(days=PREMIERE_WINDOW_DAYS)
+    # 3. The window must end after the start, and the start must be in the future.
+    if window_ends_at <= body.starts_at:
+        raise HTTPException(status_code=422, detail="WINDOW_BEFORE_START")
+    if body.starts_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="STARTS_IN_PAST")
+    # 4. The movie must exist.
+    if db.get(Movie, body.movie_id) is None:
+        raise HTTPException(status_code=404, detail="MOVIE_NOT_FOUND")
+    # 5. Build the premiere, record the audit row, save both together.
+    premiere = Premiere(
+        movie_id=body.movie_id,
+        starts_at=body.starts_at,
+        window_ends_at=window_ends_at,
+        display_time_zone=body.display_time_zone,
+        price_cents=body.price_cents,
+    )
+    db.add(premiere)
+    db.flush()
+    db.add(AuditLog(admin_id=admin.id, action="premiere.create", target_id=premiere.id))
+    db.commit()
+    return {"id": premiere.id}
+
+
+@app.post("/api/admin/premieres/{premiere_id}/cancel")
+def cancel_premiere(
+    premiere_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    # 1. Find it.
+    premiere = db.get(Premiere, premiere_id)
+    if premiere is None:
+        raise HTTPException(status_code=404, detail="PREMIERE_NOT_FOUND")
+    # 2. Already cancelled? Say so.
+    if premiere.cancelled_at is not None:
+        raise HTTPException(status_code=409, detail="ALREADY_CANCELLED")
+    # 3. Mark it cancelled, record the audit row, save both together.
+    premiere.cancelled_at = datetime.now(timezone.utc)
+    db.add(AuditLog(admin_id=admin.id, action="premiere.cancel", target_id=premiere.id))
+    db.commit()
+    return {"id": premiere.id, "cancelled": True}

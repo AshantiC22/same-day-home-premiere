@@ -2,7 +2,9 @@ from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from pydantic import BaseModel, Field
 
+PREMIERE_WINDOW_DAYS = 7
 
 class Base(DeclarativeBase):
     pass
@@ -95,3 +97,14 @@ class Purchase(Base):
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(Text, unique=True)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(Text)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(Text)
+    target_id: Mapped[int | None]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
