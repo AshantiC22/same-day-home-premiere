@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import AuditLog, LoginSession, Movie, Premiere, User
+from models import AuditLog, LoginSession, Movie, Premiere, Purchase, User
 from security import hash_password, verify_password
 
 app = FastAPI(title="Same-Day Home Premiere API")
@@ -256,3 +256,29 @@ def cancel_premiere(
     db.add(AuditLog(admin_id=admin.id, action="premiere.cancel", target_id=premiere.id))
     db.commit()
     return {"id": premiere.id, "cancelled": True}
+
+@app.post("/api/premieres/{premiere_id}/playback")
+def playback(
+    premiere_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # 1. What time is it now (UTC)?
+    now = datetime.now(timezone.utc)
+    # 2. Find the premiere. Not there? 404 PREMIERE_NOT_FOUND.
+    premiere = db.get(Premiere, premiere_id)
+    if premiere is None:
+        raise HTTPException(status_code=404, detail="PREMIERE_NOT_FOUND")
+    # 3. Find a PAID purchase for this user and this premiere. None? 403 NOT_PURCHASED.
+    purchase = db.scalar(
+        select(Purchase)
+        .where(Purchase.user_id == user.id)
+        .where(Purchase.premiere_id == premiere_id)
+        .where(Purchase.status == "paid")
+    )
+    if purchase is None:
+        raise HTTPException(status_code=403, detail="NOT_PURCHASED")
+    # 4. Past window_ends_at? 410 WINDOW_ENDED.
+    # 5. Before starts_at? 403 PREMIERE_NOT_STARTED.
+    # 6. Answer {"allowed": True} for now.
+    return {"allowed": True}
