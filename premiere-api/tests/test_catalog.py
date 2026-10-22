@@ -58,3 +58,27 @@ def test_catalog_hides_cancelled_and_ended(client, session):
 
     response = client.get("/api/premieres")
     assert [item["id"] for item in response.json()] == [good.id]
+
+def test_premiere_detail_returns_one_premiere(client, session):
+    movie = make_movie(session)
+    premiere = add_premiere(session, movie, timedelta(hours=-1), timedelta(days=6))
+    response = client.get(f"/api/premieres/{premiere.id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == premiere.id
+    assert body["title"] == "Night Shift"
+    assert body["state"] == "LIVE"
+
+def test_premiere_detail_not_found(client):
+    response = client.get("/api/premieres/99999")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "PREMIERE_NOT_FOUND"}
+
+
+def test_premiere_detail_hides_cancelled(client, session):
+    movie = make_movie(session)
+    premiere = add_premiere(
+        session, movie, timedelta(hours=1), timedelta(days=6), cancelled=True
+    )
+    response = client.get(f"/api/premieres/{premiere.id}")
+    assert response.status_code == 404

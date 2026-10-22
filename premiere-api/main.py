@@ -163,7 +163,33 @@ def list_premieres(db: Session = Depends(get_db)):
         }
         for p, m in rows
     ]
-
+@app.get("/api/premieres/{premiere_id}")
+def get_premiere(premiere_id: int, db: Session = Depends(get_db)):
+    # 1. What time is it now (UTC)?
+    now = datetime.now(timezone.utc)
+    # 2. Find this one premiere joined to its movie: not cancelled, window not over.
+    row = db.execute(
+        select(Premiere, Movie)
+        .join(Movie, Premiere.movie_id == Movie.id)
+        .where(Premiere.id == premiere_id)
+        .where(Premiere.cancelled_at.is_(None))
+        .where(Premiere.window_ends_at > now)
+    ).first()
+    # 3. Not there? 404 PREMIERE_NOT_FOUND.
+    if row is None:
+        raise HTTPException(status_code=404, detail="PREMIERE_NOT_FOUND")
+    # 4. Same dictionary as the catalog, for this one row.
+    p, m = row
+    return {
+        "id": p.id,
+        "title": m.title,
+        "synopsis": m.synopsis,
+        "starts_at": p.starts_at,
+        "window_ends_at": p.window_ends_at,
+        "price_cents": p.price_cents,
+        "currency": p.currency,
+        "state": "UPCOMING" if now < p.starts_at else "LIVE",
+    }
 
 def require_admin(user: User = Depends(get_current_user)):
     if user.role != "admin":
