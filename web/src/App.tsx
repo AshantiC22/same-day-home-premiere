@@ -3,11 +3,13 @@ import type { User } from './types'
 import { api } from './api'
 import Catalog from './Catalog'
 import AuthForm from './AuthForm'
+import PremierePage from './PremierePage'
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
   const [checking, setChecking] = useState(true)
   const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -57,7 +59,7 @@ function App() {
             {mode === 'login' ? 'Need an account? Create one' : 'Have an account? Log in'}
           </button>
         </>
-            ) : (
+      ) : (
         <>
           <p>Logged in as {user.email}</p>
           <button type="button" onClick={handleLogout}>
@@ -65,7 +67,11 @@ function App() {
           </button>
         </>
       )}
-      <Catalog />
+      {selectedId === null ? (
+        <Catalog onSelect={setSelectedId} />
+      ) : (
+        <PremierePage premiereId={selectedId} onBack={() => setSelectedId(null)} />
+      )}
     </>
   )
 }
