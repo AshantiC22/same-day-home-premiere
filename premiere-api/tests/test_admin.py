@@ -152,3 +152,19 @@ def test_cancel_unknown_premiere_is_404(client, admin):
     log_in_as(client, "boss@example.com")
     response = client.post("/api/admin/premieres/999/cancel")
     assert response.status_code == 404
+
+def test_admin_pull_movies_is_200(client, admin, movie):          
+    log_in_as(client, "boss@example.com")                           
+    response = client.get("/api/admin/movies")                     
+    assert response.status_code == 200                              
+    assert response.json() == [{"id": movie.id, "title": movie.title}] 
+
+def test_admin_pull_movies_endpoint(client):
+    response = client.get("/api/admin/movies")
+    assert response.status_code == 401  
+
+def test_dummy_user_gets_403_pull_movies(client, user):
+    log_in_as(client, "fan@example.com")
+    response = client.get("/api/admin/movies")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "ADMIN_ONLY"}

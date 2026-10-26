@@ -312,3 +312,12 @@ def playback(
         raise HTTPException(status_code=403, detail="PREMIERE_NOT_STARTED")
     # 6. Answer {"allowed": True} for now.
     return {"allowed": True}
+
+@app.get("/api/admin/movies")
+def list_movies(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    movies = db.scalars(select(Movie).order_by(Movie.title)).all()
+    return [{"id": m.id, "title": m.title} for m in movies]
+    
