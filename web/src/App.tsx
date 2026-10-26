@@ -4,6 +4,7 @@ import { api } from './api'
 import Catalog from './Catalog'
 import AuthForm from './AuthForm'
 import PremierePage from './PremierePage'
+import Admin from './Admin'
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -51,7 +52,9 @@ function App() {
 
   return (
     <>
+    
       <h1>Same-Day Home Premiere</h1>
+     
       {user === null ? (
         <>
           <AuthForm mode={mode} onLoggedIn={setUser} />
@@ -61,7 +64,9 @@ function App() {
         </>
       ) : (
         <>
+        
           <p>Logged in as {user.email}</p>
+           { user.role === 'admin' && <Admin />}
           <button type="button" onClick={handleLogout}>
             Log out
           </button>
@@ -72,7 +77,9 @@ function App() {
       ) : (
         <PremierePage premiereId={selectedId} onBack={() => setSelectedId(null)} />
       )}
+   
     </>
+    
   )
 }
 
