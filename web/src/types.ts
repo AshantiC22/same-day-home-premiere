@@ -14,3 +14,9 @@ export type Premiere = {
   currency: string
   state: 'UPCOMING' | 'LIVE'
 }
+
+export type Movie ={
+    id: number
+    title: string
+
+}
