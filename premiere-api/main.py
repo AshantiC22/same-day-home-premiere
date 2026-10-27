@@ -1,4 +1,7 @@
 import secrets
+import re
+from pathlib import Path
+from fastapi.responses import FileResponse
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
@@ -17,6 +20,7 @@ SESSION_DAYS = 7
 MAX_ATTEMPTS = 5
 LOCK_MINUTES = 15
 PREMIERE_WINDOW_DAYS = 7
+MEDIA_DIR = Path(__file__).parent / "media"
 
 
 @app.get("/api/health")
@@ -283,12 +287,7 @@ def cancel_premiere(
     db.commit()
     return {"id": premiere.id, "cancelled": True}
 
-@app.post("/api/premieres/{premiere_id}/playback")
-def playback(
-    premiere_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def check_playback_access(premiere_id: int, user: User, db: Session) -> Premiere:
     # 1. What time is it now (UTC)?
     now = datetime.now(timezone.utc)
     # 2. Find the premiere. Not there? 404 PREMIERE_NOT_FOUND.
@@ -310,14 +309,40 @@ def playback(
     # 5. Before starts_at? 403 PREMIERE_NOT_STARTED.
     if now < premiere.starts_at:
         raise HTTPException(status_code=403, detail="PREMIERE_NOT_STARTED")
-    # 6. Answer {"allowed": True} for now.
-    return {"allowed": True}
+    # 6. All good: hand back the premiere.
+    return premiere
 
-@app.get("/api/admin/movies")
-def list_movies(
-    admin: User = Depends(require_admin),
+
+@app.post("/api/premieres/{premiere_id}/playback")
+def playback(
+    premiere_id: int,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    movies = db.scalars(select(Movie).order_by(Movie.title)).all()
-    return [{"id": m.id, "title": m.title} for m in movies]
-    
+    check_playback_access(premiere_id, user, db)
+    return {"allowed": True}
+
+
+def video_path_for(title: str) -> Path:
+    # "Batman Begins" -> media/batman-begins.mp4 (letters and digits only, so no odd paths)
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return MEDIA_DIR / f"{slug}.mp4"
+
+
+@app.get("/api/premieres/{premiere_id}/stream")
+def stream(
+    premiere_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # 1. Same gate as Watch: logged in, paid, inside the window.
+    premiere = check_playback_access(premiere_id, user, db)
+    # 2. Find this movie's video file in the media folder.
+    movie = db.get(Movie, premiere.movie_id)
+    path = video_path_for(movie.title)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="VIDEO_NOT_FOUND")
+    # 3. Send the file. FileResponse supports Range, so the player can seek.
+    return FileResponse(
+        path, media_type="video/mp4", headers={"Cache-Control": "private, no-store"}
+    )
