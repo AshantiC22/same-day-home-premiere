@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Premiere } from './types'
 import { api } from './api'
+import PosterCard from './PosterCard'
+import { posterFor } from './posters'
 
 type CatalogProps = {
   onSelect: (id: number) => void
@@ -43,16 +45,24 @@ function Catalog({ onSelect }: CatalogProps) {
     return <p>No premieres scheduled yet.</p>
   }
 
-  return (
-    <ul>
-      {premieres.map((p) => (
-        <li key={p.id}>
-          <button type="button" onClick={() => onSelect(p.id)}>
-            {p.title}
-          </button>
-        </li>
-      ))}
-    </ul>
+    return (
+    <>
+      <h2 className="row-title">
+        Same Day Premieres <span aria-hidden="true">›</span>
+      </h2>
+      <ul className="poster-row">
+        {premieres.map((p) => (
+          <li key={p.id}>
+            <PosterCard
+  title={p.title}
+  seed={p.id}
+  imageUrl={posterFor(p.title)}
+  onClick={() => onSelect(p.id)}
+/>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 

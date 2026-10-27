@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Premiere } from './types'
 import { api, ApiError } from './api'
+import PremiereDetail from './PremiereDetail'
+import Player from './Player'
+import { backdropFor } from './posters'
 
 type ShowPageProp = {
   premiereId: number
@@ -33,6 +36,8 @@ function PremierePage({ premiereId, onBack }: ShowPageProp) {
   const [failed, setFailed] = useState(false)
   const [watchMessage, setWatchMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // true once the playback check said yes. The Player starts the video.
+  const [watching, setWatching] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -65,6 +70,7 @@ function PremierePage({ premiereId, onBack }: ShowPageProp) {
         method: 'POST',
       })
       setWatchMessage('Your premiere is open.')
+      setWatching(true)
     } catch (err) {
       setWatchMessage(watchMessageFor(err))
     } finally {
@@ -87,20 +93,24 @@ function PremierePage({ premiereId, onBack }: ShowPageProp) {
   }
 
   return (
-    <>
-      <button type="button" onClick={onBack}>
-        Back
-      </button>
-      <h2>{premiere.title}</h2>
-      <p>{premiere.state === 'LIVE' ? 'Live now' : 'Upcoming'}</p>
-      {premiere.synopsis !== null && <p>{premiere.synopsis}</p>}
-      <p>Starts: {new Date(premiere.starts_at).toLocaleString()}</p>
-      <p>Price: ${(premiere.price_cents / 100).toFixed(2)}</p>
-      <button type="button" onClick={handleWatch} disabled={busy}>
-        Watch
-      </button>
-      {watchMessage !== null && <p>{watchMessage}</p>}
-    </>
+    <PremiereDetail
+      premiere={premiere}
+      busy={busy}
+      watchMessage={watchMessage}
+      onWatch={handleWatch}
+      onBack={onBack}
+      player={
+        <Player
+          title={premiere.title}
+          src={`/api/premieres/${premiere.id}/stream`}
+          art={backdropFor(premiere.title)}
+          open={watching}
+          busy={busy}
+          message={watchMessage}
+          onPlay={handleWatch}
+        />
+      }
+    />
   )
 }
 
