@@ -99,7 +99,7 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)):
     response.set_cookie("session_id", session_id, httponly=True, samesite="lax",
                         max_age=SESSION_DAYS * 24 * 60 * 60)
     # 7. Answer with id and email.
-    return {"id": user.id, "email": user.email}
+    return {"id": user.id, "email": user.email, "role": user.role}
 
 
 def get_current_user(
@@ -222,6 +222,15 @@ def create_movie(
     db.add(AuditLog(admin_id=admin.id, action="movie.create", target_id=movie.id))
     db.commit()
     return {"id": movie.id, "title": movie.title}
+
+# dependencies=[Depends(require_admin)] runs the admin check before the function body:
+# not logged in -> 401 NOT_LOGGED_IN, logged in but not an admin -> 403 ADMIN_ONLY.
+@app.get("/api/admin/movies", dependencies=[Depends(require_admin)])
+def list_movies(db: Session = Depends(get_db)):
+    # 1. Every movie, A to Z by title.
+    movies = db.scalars(select(Movie).order_by(Movie.title)).all()
+    # 2. One dictionary per movie.
+    return [{"id": m.id, "title": m.title} for m in movies]
 
 
 class PremiereIn(BaseModel):

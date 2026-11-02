@@ -32,7 +32,7 @@ def test_login_sets_cookie_and_creates_session(client, session, user):
         "/api/auth/login", json={"email": " FAN@example.com ", "password": "devpass1"}
     )
     assert response.status_code == 200
-    assert response.json() == {"id": user.id, "email": "fan@example.com"}
+    assert response.json() == {"id": user.id, "email": "fan@example.com", "role": "user"}
     assert "httponly" in response.headers["set-cookie"].lower()
 
     session_id = response.cookies.get("session_id")
