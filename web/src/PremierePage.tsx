@@ -7,6 +7,7 @@ import { backdropFor } from './posters'
 
 type ShowPageProp = {
   premiereId: number
+  startOnWatch: boolean
   onBack: () => void
 }
 
@@ -31,7 +32,7 @@ function watchMessageFor(err: unknown): string {
   return 'Something went wrong. Try again.'
 }
 
-function PremierePage({ premiereId, onBack }: ShowPageProp) {
+function PremierePage({ premiereId, startOnWatch, onBack }: ShowPageProp) {
   const [premiere, setPremiere] = useState<Premiere | null>(null)
   const [failed, setFailed] = useState(false)
   const [watchMessage, setWatchMessage] = useState<string | null>(null)
@@ -99,6 +100,7 @@ function PremierePage({ premiereId, onBack }: ShowPageProp) {
       watchMessage={watchMessage}
       onWatch={handleWatch}
       onBack={onBack}
+      startOnWatch={startOnWatch}
       player={
         <Player
           title={premiere.title}

@@ -16,9 +16,59 @@ type PlayerProps = {
   onPlay: () => void
 }
 
+// Most browsers can make one element fullscreen. iPhone Safari can only fullscreen the <video> itself,
+// so there the video is left to go fullscreen on its own when it starts (see playsInline below).
+const canFullscreen = typeof document.documentElement.requestFullscreen === 'function'
+
+// The fullscreen request that is still waiting for the browser to answer, if there is one.
+let entering: Promise<void> | null = null
+
+// Press Play and the screen takes over the whole display, like the lights going down.
+// Browsers only allow this right after a click, so it is only called from Play and Try again.
+function enterTheater(screen: HTMLElement | null) {
+  if (screen === null || !canFullscreen || document.fullscreenElement !== null) {
+    return
+  }
+  // If the browser says no, the film just plays on the page instead.
+  const request = screen.requestFullscreen().catch(() => {})
+  entering = request
+  void request.then(() => {
+    if (entering === request) {
+      entering = null
+    }
+  })
+}
+
+function leaveTheater() {
+  function exit() {
+    if (document.fullscreenElement !== null) {
+      document.exitFullscreen().catch(() => {})
+    }
+  }
+  // A video that fails right away can ask to leave while fullscreen is still starting. At that moment
+  // there is nothing to leave yet, so wait for the start to finish and then leave. Otherwise it gets stuck.
+  if (entering !== null) {
+    void entering.then(exit)
+  } else {
+    exit()
+  }
+}
+
 // Where each film was last stopped, so a trip to another tab does not send the viewer back to 0:00.
 // A stand-in until watch progress is saved on the server.
 const resumeAt = new Map<string, number>()
+
+// The "Feature Presentation" card plays once per film per visit, so a trip to another tab does not replay it.
+// It is cleared when the film ends, so watching again gets the card again.
+const introSeen = new Set<string>()
+
+// How long the card stays up, in milliseconds. The animations in index.css (.player-intro) are timed to match.
+const INTRO_MS = 4400
+
+// Anyone who asked their device to cut back on motion skips the card.
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
 
 // The <video> tag only says "it failed". Ask the API again, quietly, to find out why.
 async function explainFailure(src: string): Promise<string> {
@@ -71,21 +121,44 @@ type VideoProps = {
   src: string
   art: string | undefined
   onRetry: () => void
+  // true while the film is playing, false when it is paused or stopped.
+  onLights: (down: boolean) => void
+  onFail: () => void
+  onEnd: () => void
 }
 
 // Only mounted after the playback check passed. Its own state starts fresh every time it mounts.
-function Video({ title, src, art, onRetry }: VideoProps) {
+function Video({ title, src, art, onRetry, onLights, onFail, onEnd }: VideoProps) {
   const ref = useRef<HTMLVideoElement>(null)
+  const skipRef = useRef<HTMLButtonElement>(null)
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
+  // true while the "Feature Presentation" card covers the screen. The film loads behind it and starts when it ends.
+  const [intro, setIntro] = useState(() => !introSeen.has(src) && !prefersReducedMotion())
 
   useEffect(() => {
-    // Keyboard users lose the play button when it goes away, so hand them the video.
-    ref.current?.focus({ preventScroll: true })
-  }, [])
+    if (intro) {
+      introSeen.add(src)
+      // The lights go down as the card comes up.
+      onLights(true)
+      // Keyboard users lose the play button when it goes away, so hand them the skip button.
+      skipRef.current?.focus({ preventScroll: true })
+      const timer = window.setTimeout(() => setIntro(false), INTRO_MS)
+      return () => window.clearTimeout(timer)
+    }
+    // The card is gone (or was never shown): start the film and hand the keyboard to the video.
+    const video = ref.current
+    video?.focus({ preventScroll: true })
+    // A browser can refuse to start a film on its own. Then the video just waits, with its own controls, for a tap.
+    video?.play().catch(() => onLights(false))
+  }, [intro, src, onLights])
 
   async function handleError() {
+    setIntro(false)
     setLoading(false)
+    onLights(false)
+    // Leave fullscreen so the message is on the page where it can be read.
+    onFail()
     setFailure(await explainFailure(src))
   }
 
@@ -97,8 +170,7 @@ function Video({ title, src, art, onRetry }: VideoProps) {
         src={src}
         poster={art}
         controls={failure === null}
-        autoPlay
-        playsInline
+        playsInline={canFullscreen}
         preload="auto"
         controlsList="nodownload"
         aria-label={title}
@@ -110,14 +182,35 @@ function Video({ title, src, art, onRetry }: VideoProps) {
           }
         }}
         onTimeUpdate={(e) => resumeAt.set(src, e.currentTarget.currentTime)}
-        onEnded={() => resumeAt.delete(src)}
+        onEnded={() => {
+          resumeAt.delete(src)
+          introSeen.delete(src)
+          onLights(false)
+          onEnd()
+        }}
+        onPause={() => onLights(false)}
         onWaiting={() => setLoading(true)}
         onCanPlay={() => setLoading(false)}
-        onPlaying={() => setLoading(false)}
+        onPlaying={() => {
+          setLoading(false)
+          onLights(true)
+        }}
         onError={handleError}
       />
 
       {loading && failure === null && <span className="player-spinner" role="status" aria-label="Loading video" />}
+
+      {intro && (
+        // A click anywhere on the card, the button included, skips it.
+        <div className="player-intro" onClick={() => setIntro(false)}>
+          <span className="player-intro-rule" aria-hidden="true" />
+          <p className="player-intro-kicker">Feature Presentation</p>
+          <p className="player-intro-title">{title}</p>
+          <button ref={skipRef} type="button" className="player-intro-skip" aria-label={`Skip intro for ${title}`}>
+            Skip intro
+          </button>
+        </div>
+      )}
 
       {failure !== null && (
         <div className="player-error" role="alert">
@@ -134,11 +227,43 @@ function Video({ title, src, art, onRetry }: VideoProps) {
 function Player({ title, src, art, open, busy, message, onPlay }: PlayerProps) {
   // Changing this remounts the video, which is how "Try again" starts over.
   const [attempt, setAttempt] = useState(0)
+  // House lights: down while the film plays, back up when it pauses or ends.
+  const [lightsDown, setLightsDown] = useState(false)
+  const screenRef = useRef<HTMLDivElement>(null)
+  const wasOpen = useRef(open)
+
+  useEffect(() => {
+    // Only when the answer just turned into yes. Coming back to this tab later does not count as a click.
+    if (open && !wasOpen.current) {
+      enterTheater(screenRef.current)
+    }
+    wasOpen.current = open
+  }, [open])
+
+  useEffect(() => {
+    // The page around the screen goes dark. A class on <body> lets the header and tab bar dim too.
+    document.body.classList.toggle('house-lights-down', lightsDown)
+    return () => document.body.classList.remove('house-lights-down')
+  }, [lightsDown])
+
+  function handleRetry() {
+    enterTheater(screenRef.current)
+    setAttempt(attempt + 1)
+  }
 
   return (
-    <div className="player">
+    <div ref={screenRef} className={lightsDown ? 'player is-playing' : 'player'}>
       {open ? (
-        <Video key={attempt} title={title} src={src} art={art} onRetry={() => setAttempt(attempt + 1)} />
+        <Video
+          key={attempt}
+          title={title}
+          src={src}
+          art={art}
+          onRetry={handleRetry}
+          onLights={setLightsDown}
+          onFail={leaveTheater}
+          onEnd={leaveTheater}
+        />
       ) : (
         <>
           {art !== undefined && (

@@ -39,13 +39,27 @@ function Catalog({ onSelect }: CatalogProps) {
     return <p>Could not load the catalog. Try again.</p>
   }
   if (premieres === null) {
-    return <p>Loading...</p>
+    // Five empty posters with a light sweeping across them, so the row is already the right shape when the real ones arrive.
+    return (
+      <>
+        <h2 className="row-title">
+          Same Day Premieres <span aria-hidden="true">›</span>
+        </h2>
+        <ul className="poster-row" aria-busy="true" aria-label="Loading premieres">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <li key={n}>
+              <span className="poster-skeleton" aria-hidden="true" />
+            </li>
+          ))}
+        </ul>
+      </>
+    )
   }
   if (premieres.length === 0) {
     return <p>No premieres scheduled yet.</p>
   }
 
-    return (
+  return (
     <>
       <h2 className="row-title">
         Same Day Premieres <span aria-hidden="true">›</span>
@@ -54,11 +68,13 @@ function Catalog({ onSelect }: CatalogProps) {
         {premieres.map((p) => (
           <li key={p.id}>
             <PosterCard
-  title={p.title}
-  seed={p.id}
-  imageUrl={posterFor(p.title)}
-  onClick={() => onSelect(p.id)}
-/>
+              title={p.title}
+              seed={p.id}
+              imageUrl={posterFor(p.title)}
+              state={p.state}
+              startsAt={p.starts_at}
+              onClick={() => onSelect(p.id)}
+            />
           </li>
         ))}
       </ul>

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { User } from './types'
+import { readSeat } from './seat'
 
 type HeaderProps = {
   user: User | null
@@ -33,18 +34,71 @@ function Logo() {
 
 function Header({ user, onLogout, onSignIn }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const headerRef = useRef<HTMLElement>(null)
+  const navRef = useRef<HTMLElement>(null)
+
+  // Point the stage light at one link. The light and the lit bulbs both read these two numbers from the header.
+  const aim = useCallback((link: HTMLElement | null) => {
+    const header = headerRef.current
+    if (header === null || link === null) {
+      return
+    }
+    const box = link.getBoundingClientRect()
+    const edge = header.getBoundingClientRect()
+    header.style.setProperty('--lx', `${(box.left - edge.left + box.width / 2).toFixed(1)}px`)
+    header.style.setProperty('--lw', `${box.width.toFixed(1)}px`)
+  }, [])
+
+  // Back to the page you are on.
+  const rest = useCallback(() => {
+    aim(navRef.current?.querySelector<HTMLElement>('a[aria-current="page"]') ?? null)
+  }, [aim])
+
+  // Put the light on Home before the first paint, with no gliding, so it is already there when the page shows.
+  // The gliding is switched on two frames later, for every move after that.
+  useLayoutEffect(() => {
+    const header = headerRef.current
+    rest()
+    let second = 0
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => header?.classList.add('is-aimed'))
+    })
+    return () => {
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
+    }
+  }, [rest])
+
+  useEffect(() => {
+    window.addEventListener('resize', rest)
+    // The links move a little once the page font loads.
+    void document.fonts?.ready.then(rest)
+    return () => {
+      window.removeEventListener('resize', rest)
+    }
+  }, [rest])
+
+  const seat = readSeat()
+  const memberNumber = user === null ? '' : String(user.id).padStart(4, '0')
+  const shortName = user === null ? '' : user.email.split('@')[0]
 
   return (
-    <header className="site-header">
+    <header className="site-header" ref={headerRef}>
+      <span className="nav-light" aria-hidden="true" />
+      <span className="bulbs bulbs-dim" aria-hidden="true" />
+      <span className="bulbs bulbs-lit" aria-hidden="true" />
+
       <div className="container">
         <Logo />
 
-        <nav className="nav" aria-label="Main">
+        <nav className="nav" aria-label="Main" ref={navRef} onMouseLeave={rest} onBlur={rest}>
           {links.map((link) => (
             <a
               key={link.label}
               href={link.href}
               aria-current={link.label === 'Home' ? 'page' : undefined}
+              onMouseEnter={(e) => aim(e.currentTarget)}
+              onFocus={(e) => aim(e.currentTarget)}
             >
               {link.label}
             </a>
@@ -74,18 +128,28 @@ function Header({ user, onLogout, onSignIn }: HeaderProps) {
             </button>
           ) : (
             <div className="account">
+              {/* Your account is a ticket stub: your seat (or your initial) and your member number. */}
               <button
                 type="button"
-                className="avatar"
+                className="avatar stub"
                 aria-label="Account menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
               >
-                {user.email.charAt(0).toUpperCase()}
+                <span className="stub-seat" aria-hidden="true">
+                  {seat ?? user.email.charAt(0).toUpperCase()}
+                </span>
+                <span className="stub-no" aria-hidden="true">
+                  No. {memberNumber}
+                </span>
               </button>
+              <span className="stub-name" aria-hidden="true">
+                {shortName}
+              </span>
               {menuOpen && (
                 <div className="menu">
                   <p>Logged in as {user.email}</p>
+                  {seat !== null && <p>Your seat: {seat}</p>}
                   <button type="button" onClick={onLogout}>
                     Log out
                   </button>

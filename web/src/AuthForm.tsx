@@ -2,14 +2,12 @@ import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import type { User } from './types'
 import { api, ApiError } from './api'
+import { SEAT_ROWS, SEATS_PER_ROW, readSeat, saveSeat } from './seat'
 
 type AuthFormProps = {
   mode: 'login' | 'signup'
   onLoggedIn: (user: User) => void
 }
-
-// Decorative for now. Preferences and Get Started screens do not exist yet.
-const signupSteps = ['Create Account', 'Preferences', 'Get Started']
 
 function messageFor(err: unknown): string {
   if (err instanceof ApiError) {
@@ -44,12 +42,46 @@ function EyeIcon({ crossed }: { crossed: boolean }) {
   )
 }
 
-function ArrowIcon() {
+function PlayIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 12h14" />
-      <path d="M13 6l6 6-6 6" />
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+      <path d="M7 4v16l13-8z" />
     </svg>
+  )
+}
+
+// A small map of the room. Picking a seat is the sign up step that used to be "Preferences".
+function SeatPicker({ value, onPick }: { value: string; onPick: (seat: string) => void }) {
+  return (
+    <fieldset className="seatmap">
+      <legend>Pick your seat</legend>
+      <p className="seatmap-hint">It prints on your tickets. Saved on this device.</p>
+      <div className="seatmap-screen" aria-hidden="true" />
+      <div className="seatmap-grid">
+        {SEAT_ROWS.map((row) => (
+          <div className="seatmap-row" key={row}>
+            <span className="seatmap-letter" aria-hidden="true">
+              {row}
+            </span>
+            {Array.from({ length: SEATS_PER_ROW }, (_, i) => {
+              const id = `${row}${i + 1}`
+              return (
+                <label className="seat" key={id}>
+                  <input type="radio" name="seat" value={id} checked={value === id} onChange={() => onPick(id)} />
+                  <span className="seat-shape" aria-hidden="true" />
+                  <span className="sr-only">
+                    Row {row}, seat {i + 1}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+      <p className="seatmap-readout" aria-live="polite">
+        {value === '' ? 'No seat picked yet' : `Seat ${value}`}
+      </p>
+    </fieldset>
   )
 }
 
@@ -63,9 +95,15 @@ function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
   const [agreed, setAgreed] = useState(false)
   // TODO: sessions always last 7 days, so "Keep me signed in" changes nothing yet.
   const [keep, setKeep] = useState(true)
+  const [seat, setSeat] = useState(() => readSeat() ?? '')
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  function pickSeat(value: string) {
+    setSeat(value)
+    saveSeat(value)
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -90,111 +128,101 @@ function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
       <p className="auth-sub">
         {isSignup
           ? 'Join Same Day Premiere and start watching the latest movies, same day.'
-          : 'Welcome back. Continue watching the latest premieres.'}
+          : 'Continue watching the latest premieres.'}
       </p>
 
-      {isSignup && (
-        <ol className="auth-steps" aria-hidden="true">
-          {signupSteps.map((label, i) => (
-            <li key={label} className={i === 0 ? 'is-active' : undefined}>
-              <span className="auth-step-dot">{i + 1}</span>
-              {label}
-            </li>
-          ))}
-        </ol>
-      )}
+      <div className={isSignup ? 'auth-cols' : 'auth-cols is-single'}>
+        <div className="auth-col">
+          {isSignup && (
+            <>
+              <label htmlFor="name">Full Name</label>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                placeholder="Tyler Smith"
+                value={name}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+              />
+            </>
+          )}
 
-      {/* TODO: Google and Apple sign-in are not built. Use their official button artwork when they are. */}
-      <button type="button" className="oauth oauth-google" onClick={() => setNote('Google sign-in is coming soon.')}>
-        Continue with Google
-      </button>
-      <button type="button" className="oauth oauth-apple" onClick={() => setNote('Apple sign-in is coming soon.')}>
-        Continue with Apple
-      </button>
+          <label htmlFor="email">Email Address</label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            required
+            value={email}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+          />
+
+          <label htmlFor="password">{isSignup ? 'Create Password' : 'Password'}</label>
+          <div className="pw-field">
+            <input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete={isSignup ? 'new-password' : 'current-password'}
+              placeholder={isSignup ? 'At least 8 characters' : 'Enter your password'}
+              required
+              minLength={isSignup ? 8 : undefined}
+              value={password}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+            />
+            <button
+              type="button"
+              className="pw-toggle"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              <EyeIcon crossed={showPassword} />
+            </button>
+          </div>
+
+          {isSignup && (
+            <label className="check">
+              <input
+                type="checkbox"
+                required
+                checked={agreed}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setAgreed(e.target.checked)}
+              />
+              <span>
+                I agree to the <strong>Terms of Service</strong> and <strong>Privacy Policy</strong>
+              </span>
+            </label>
+          )}
+
+          {!isSignup && (
+            <div className="auth-row">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={keep}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setKeep(e.target.checked)}
+                />
+                <span>Keep me signed in</span>
+              </label>
+              <button type="button" className="text-btn" onClick={() => setNote('Password reset is coming soon.')}>
+                Forgot password?
+              </button>
+            </div>
+          )}
+        </div>
+
+        {isSignup && (
+          <div className="auth-col">
+            <SeatPicker value={seat} onPick={pickSeat} />
+          </div>
+        )}
+      </div>
+
       {note !== null && (
         <p className="auth-note" role="status">
           {note}
         </p>
-      )}
-
-      <div className="auth-or">
-        <span>or</span>
-      </div>
-
-      {isSignup && (
-        <>
-          <label htmlFor="name">Full Name</label>
-          <input
-            id="name"
-            type="text"
-            autoComplete="name"
-            placeholder="Tyler Smith"
-            value={name}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-          />
-        </>
-      )}
-
-      <label htmlFor="email">Email Address</label>
-      <input
-        id="email"
-        type="email"
-        autoComplete="email"
-        placeholder="you@example.com"
-        required
-        value={email}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-      />
-
-      <label htmlFor="password">{isSignup ? 'Create Password' : 'Password'}</label>
-      <div className="pw-field">
-        <input
-          id="password"
-          type={showPassword ? 'text' : 'password'}
-          autoComplete={isSignup ? 'new-password' : 'current-password'}
-          placeholder={isSignup ? 'At least 8 characters' : 'Enter your password'}
-          required
-          minLength={isSignup ? 8 : undefined}
-          value={password}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-        />
-        <button
-          type="button"
-          className="pw-toggle"
-          aria-label={showPassword ? 'Hide password' : 'Show password'}
-          aria-pressed={showPassword}
-          onClick={() => setShowPassword(!showPassword)}
-        >
-          <EyeIcon crossed={showPassword} />
-        </button>
-      </div>
-
-      {isSignup ? (
-        <label className="check">
-          <input
-            type="checkbox"
-            required
-            checked={agreed}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setAgreed(e.target.checked)}
-          />
-          <span>
-            I agree to the <strong>Terms of Service</strong> and <strong>Privacy Policy</strong>
-          </span>
-        </label>
-      ) : (
-        <div className="auth-row">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={keep}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setKeep(e.target.checked)}
-            />
-            <span>Keep me signed in</span>
-          </label>
-          <button type="button" className="text-btn" onClick={() => setNote('Password reset is coming soon.')}>
-            Forgot password?
-          </button>
-        </div>
       )}
 
       {error !== null && (
@@ -204,9 +232,22 @@ function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
       )}
 
       <button type="submit" className="auth-submit" disabled={busy}>
+        {!busy && <PlayIcon />}
         {busy ? 'Please wait...' : isSignup ? 'Create Account' : 'Sign In'}
-        {!busy && <ArrowIcon />}
       </button>
+
+      {/* TODO: Google and Apple sign-in are not built. Use their official button artwork when they are. */}
+      <div className="auth-or">
+        <span>or</span>
+      </div>
+      <div className="auth-oauth">
+        <button type="button" className="oauth oauth-google" onClick={() => setNote('Google sign-in is coming soon.')}>
+          Continue with Google
+        </button>
+        <button type="button" className="oauth oauth-apple" onClick={() => setNote('Apple sign-in is coming soon.')}>
+          Continue with Apple
+        </button>
+      </div>
     </form>
   )
 }

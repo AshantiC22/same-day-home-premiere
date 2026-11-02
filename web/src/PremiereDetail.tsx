@@ -3,6 +3,9 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import type { Premiere } from './types'
 import { backdropFor } from './posters'
 import { infoFor } from './movieInfo'
+import { ticketFields } from './showtime'
+import { readSeat } from './seat'
+import Ticket from './Ticket'
 import { CastPanel, OverviewPanel, PhotosPanel, ReviewsPanel, SimilarPanel, TrailersPanel } from './DetailPanels'
 
 type PremiereDetailProps = {
@@ -11,6 +14,8 @@ type PremiereDetailProps = {
   watchMessage: string | null
   onWatch: () => void
   onBack: () => void
+  // Open on the Watch tab instead of Overview (the home "Watch Now" button).
+  startOnWatch?: boolean
   player?: ReactNode
 }
 
@@ -36,12 +41,9 @@ const theaterPoints = [
 
 const partners = ['Metro Cinemas', 'Grand Theatres', 'Starlight Screens']
 
-type IconName = 'home' | 'seat' | 'check' | 'back' | 'play'
+type IconName = 'back' | 'play'
 
 const iconPaths: Record<IconName, string[]> = {
-  home: ['M3 11l9-8 9 8', 'M5 10v10h14V10', 'M10 20v-6h4v6'],
-  seat: ['M6 11V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v5', 'M4 11a2 2 0 0 1 2 2v3h12v-3a2 2 0 0 1 4 0v5H2v-5a2 2 0 0 1 2-2z', 'M6 20v2', 'M18 20v2'],
-  check: ['M5 12l5 5 9-10'],
   back: ['M19 12H5', 'M11 6l-6 6 6 6'],
   play: ['M8 5v14l11-7z'],
 }
@@ -77,12 +79,6 @@ function formatPrice(cents: number, currency: string): string {
   }
 }
 
-function windowLabel(p: Premiere): string {
-  const ms = new Date(p.window_ends_at).getTime() - new Date(p.starts_at).getTime()
-  const days = Math.round(ms / 86_400_000)
-  return days >= 1 ? `${days}-day viewing window` : 'Limited viewing window'
-}
-
 function statusLine(p: Premiere): string {
   if (p.state === 'LIVE') {
     return 'In theaters today • Watch at home now'
@@ -91,8 +87,8 @@ function statusLine(p: Premiere): string {
   return `Premieres ${when}`
 }
 
-function PremiereDetail({ premiere, busy, watchMessage, onWatch, onBack, player }: PremiereDetailProps) {
-  const [tab, setTab] = useState<TabId>('overview')
+function PremiereDetail({ premiere, busy, watchMessage, onWatch, onBack, startOnWatch = false, player }: PremiereDetailProps) {
+  const [tab, setTab] = useState<TabId>(startOnWatch ? 'watch' : 'overview')
   // A short message for buttons whose feature is not built yet.
   const [note, setNote] = useState<string | null>(null)
 
@@ -104,6 +100,13 @@ function PremiereDetail({ premiere, busy, watchMessage, onWatch, onBack, player 
       }
     }
   }, [note])
+
+  useEffect(() => {
+    // Arriving from "Watch Now": bring the tab bar and the player into view.
+    if (startOnWatch) {
+      document.getElementById('movie-tabs')?.scrollIntoView({ block: 'start' })
+    }
+  }, [startOnWatch])
 
   const info = infoFor(premiere.title)
   const backdrop = backdropFor(premiere.title)
@@ -220,41 +223,35 @@ function PremiereDetail({ premiere, busy, watchMessage, onWatch, onBack, player 
                 {player !== undefined && <div className="detail-player">{player}</div>}
 
                 <div className="option-cards">
-                  <article className="option option-home">
-                    <div className="option-head">
-                      <span className="option-icon"><Icon name="home" size={26} /></span>
-                      <div>
-                        <h3>Watch at Home</h3>
-                        <p className="option-price">{price}</p>
-                      </div>
+                  {/* The ticket you are buying: watch at home. The scan line runs while the API checks it. */}
+                  <Ticket
+                    title={premiere.title}
+                    serial={premiere.id}
+                    fields={ticketFields(premiere, readSeat())}
+                    note="Watch the same day as theaters. Stream on TV, computer, phone or tablet. Up to 6 devices, same household."
+                    scanning={busy}
+                  >
+                    <div className="ticket-buy">
+                      <p className="option-price">{price}</p>
+                      <button type="button" className="btn btn-primary" onClick={onWatch} disabled={busy}>
+                        {busy ? 'Checking...' : 'Rent & Watch Now'}
+                      </button>
                     </div>
-                    <ul className="ticks">
-                      <li><Icon name="check" size={16} />Watch the same day as theaters</li>
-                      <li><Icon name="check" size={16} />Stream on TV, computer, phone or tablet</li>
-                      <li><Icon name="check" size={16} />{windowLabel(premiere)}</li>
-                      <li><Icon name="check" size={16} />Up to 6 devices (same household)</li>
-                    </ul>
-                    <button type="button" className="btn btn-primary" onClick={onWatch} disabled={busy}>
-                      {busy ? 'Checking...' : 'Rent & Watch Now'}
-                    </button>
                     {watchMessage !== null && (
                       <p className="option-message" role="status">
                         {watchMessage}
                       </p>
                     )}
-                  </article>
+                  </Ticket>
 
-                  <article className="option">
-                    <div className="option-head">
-                      <span className="option-icon"><Icon name="seat" size={26} /></span>
-                      <div>
-                        <h3>See it in Theaters</h3>
-                        <p className="option-price option-price-small">Prices vary by theater</p>
-                      </div>
+                  <article className="option option-theater">
+                    <div className="option-theater-head">
+                      <h3>See it in Theaters</h3>
+                      <p className="option-price option-price-small">Prices vary by theater</p>
                     </div>
-                    <ul className="ticks">
+                    <ul className="ticks plain">
                       {theaterPoints.map((text) => (
-                        <li key={text}><Icon name="check" size={16} />{text}</li>
+                        <li key={text}>{text}</li>
                       ))}
                     </ul>
                     <button type="button" className="btn btn-outline" onClick={() => setNote('Theater showtimes are coming soon.')}>
@@ -286,8 +283,12 @@ function PremiereDetail({ premiere, busy, watchMessage, onWatch, onBack, player 
               <button type="button" className="text-link" onClick={() => setNote('The theater list is coming soon.')}>
                 See All Partner Theaters →
               </button>
-              <div className="partner-art" aria-hidden="true">
-                <span className="partner-neon">Cinema</span>
+              <div className="marquee" aria-hidden="true">
+                <span className="marquee-bulbs is-top" />
+                <p className="marquee-head">{premiere.state === 'LIVE' ? 'Now showing' : 'Coming soon'}</p>
+                <p className="marquee-title">{premiere.title}</p>
+                <p className="marquee-foot">Theaters + your couch</p>
+                <span className="marquee-bulbs is-bottom" />
               </div>
             </section>
           </aside>

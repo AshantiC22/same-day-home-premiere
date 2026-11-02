@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
 import type { User } from './types'
 import AuthForm from './AuthForm'
+import Auditorium from './Auditorium'
 
 type Mode = 'login' | 'signup'
 
@@ -12,25 +14,26 @@ type AuthModalProps = {
   onClose: () => void
 }
 
-type IconName = 'ticket' | 'home' | 'theater' | 'screen'
-
-const iconPaths: Record<IconName, string[]> = {
-  ticket: ['M3 7h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z', 'M14 7v10'],
-  home: ['M3 11l9-8 9 8', 'M5 10v10h14V10', 'M10 20v-6h4v6'],
-  theater: ['M3 9l9-5 9 5', 'M5 10v9', 'M9 10v9', 'M15 10v9', 'M19 10v9', 'M3 20h18'],
-  screen: ['M3 5h18v11H3z', 'M8 20h8', 'M12 16v4'],
-}
-
-const points: { icon: IconName; title: string; text: string }[] = [
-  { icon: 'ticket', title: 'Same Day Releases', text: 'New movies when they hit theaters' },
-  { icon: 'home', title: 'Watch at Home', text: 'Stream on your devices' },
-  { icon: 'theater', title: 'Partnered Theaters', text: 'Support your local cinema' },
-  { icon: 'screen', title: 'Any Device', text: 'TV, phone, tablet, or computer' },
-]
-
 function AuthModal({ open, mode, onModeChange, onLoggedIn, onClose }: AuthModalProps) {
   const ref = useRef<HTMLDialogElement>(null)
+  const layoutRef = useRef<HTMLDivElement>(null)
+  const roomRef = useRef<HTMLDivElement>(null)
+  // The flashlight: where it is now (x, y) and where the mouse is (tx, ty). It eases toward the mouse.
+  const light = useRef({ x: 0, y: 0, tx: 0, ty: 0, started: false })
+  const frame = useRef(0)
   const isSignup = mode === 'signup'
+  // The dialog fades out when it closes (see .auth-screen in index.css). The room stays on screen until the
+  // fade is over, then it is removed, so the next visit starts fresh.
+  const [shown, setShown] = useState(open)
+
+  useEffect(() => {
+    if (open) {
+      setShown(true)
+      return
+    }
+    const timer = window.setTimeout(() => setShown(false), 450)
+    return () => window.clearTimeout(timer)
+  }, [open])
 
   useEffect(() => {
     const dialog = ref.current
@@ -48,6 +51,55 @@ function AuthModal({ open, mode, onModeChange, onLoggedIn, onClose }: AuthModalP
     }
   }, [open, mode])
 
+  // A new visit starts with the flashlight back at its resting spot.
+  useEffect(() => {
+    light.current.started = false
+  }, [open])
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(frame.current)
+    }
+  }, [])
+
+  function step() {
+    const el = roomRef.current
+    const l = light.current
+    if (el === null) {
+      frame.current = 0
+      return
+    }
+    l.x += (l.tx - l.x) * 0.16
+    l.y += (l.ty - l.y) * 0.16
+    el.style.setProperty('--fx', `${l.x.toFixed(1)}px`)
+    el.style.setProperty('--fy', `${l.y.toFixed(1)}px`)
+    if (Math.abs(l.tx - l.x) > 0.5 || Math.abs(l.ty - l.y) > 0.5) {
+      frame.current = requestAnimationFrame(step)
+    } else {
+      frame.current = 0
+    }
+  }
+
+  // A mouse moves the flashlight. A finger does not: on a phone it stays where it rests.
+  function handleMove(e: PointerEvent<HTMLDivElement>) {
+    const el = layoutRef.current
+    if (el === null || e.pointerType === 'touch') {
+      return
+    }
+    const box = el.getBoundingClientRect()
+    const l = light.current
+    if (!l.started) {
+      l.x = box.width * 0.24
+      l.y = box.height * 0.72
+      l.started = true
+    }
+    l.tx = e.clientX - box.left
+    l.ty = e.clientY - box.top
+    if (frame.current === 0) {
+      frame.current = requestAnimationFrame(step)
+    }
+  }
+
   return (
     <dialog
       ref={ref}
@@ -55,8 +107,14 @@ function AuthModal({ open, mode, onModeChange, onLoggedIn, onClose }: AuthModalP
       aria-label={isSignup ? 'Create account' : 'Sign in'}
       onClose={onClose}
     >
-      {open && (
-        <div className={isSignup ? 'auth-layout auth-signup' : 'auth-layout auth-login'}>
+      {(open || shown) && (
+        <div
+          ref={layoutRef}
+          className={isSignup ? 'auth-layout auth-signup' : 'auth-layout auth-login'}
+          onPointerMove={handleMove}
+        >
+          <Auditorium lightRef={roomRef} />
+
           <button type="button" className="auth-back" aria-label="Back" onClick={onClose}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M19 12H5" />
@@ -85,31 +143,10 @@ function AuthModal({ open, mode, onModeChange, onLoggedIn, onClose }: AuthModalP
             </p>
           )}
 
-          {isSignup && (
-            <section className="auth-hero">
-              {/* TODO: the background is a stand-in for the movie artwork. */}
-              <p className="auth-kicker">Same movies. Same day.</p>
-              <h2 className="auth-headline">Premieres Beyond the Theater.</h2>
-              <p className="auth-lede">
-                Watch the biggest new releases at home or at participating theaters. Same day.
-              </p>
-              <ul className="auth-points">
-                {points.map((p) => (
-                  <li key={p.title}>
-                    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      {iconPaths[p.icon].map((d) => (
-                        <path key={d} d={d} />
-                      ))}
-                    </svg>
-                    <div>
-                      <strong>{p.title}</strong>
-                      <span>{p.text}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {/* The screen at the front of the room. It shows a slide, like the one before a film starts. */}
+          <div className="aud-screen" aria-hidden="true">
+            <span className="aud-slide">{isSignup ? 'Take a seat' : 'Welcome back'}</span>
+          </div>
 
           <div className="auth-side">
             <div className="auth-card">
@@ -126,13 +163,6 @@ function AuthModal({ open, mode, onModeChange, onLoggedIn, onClose }: AuthModalP
               </p>
             </div>
           </div>
-
-          {!isSignup && (
-            <div className="auth-art" aria-hidden="true">
-              {/* TODO: stand-in for the cinema street photo. */}
-              <span className="auth-neon">Cinema</span>
-            </div>
-          )}
         </div>
       )}
     </dialog>

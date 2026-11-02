@@ -1,10 +1,19 @@
+import Ticket from './Ticket'
+
 // TODO: step 2 still says "Subscribe". Rewrite it when checkout exists.
-// TODO: the right side is a stand-in for the cinema artwork.
 const steps = [
   { title: 'Choose a Movie', text: 'Browse same day releases and find your next favorite.' },
   { title: 'Sign In / Subscribe', text: 'Create an account and pick a plan that fits you.' },
   { title: 'Watch Instantly', text: 'Stream at home, on any device.' },
   { title: 'Support Real Theaters', text: 'Your subscription helps fund local theaters and keeps the movie experience alive.' },
+]
+
+// What a ticket looks like, for the picture beside the steps.
+const sampleFields = [
+  { label: 'Date', value: 'Tonight' },
+  { label: 'Time', value: '7:00 PM' },
+  { label: 'Window', value: '7 days' },
+  { label: 'Seat', value: 'Your couch' },
 ]
 
 function HowItWorks() {
@@ -26,10 +35,14 @@ function HowItWorks() {
           </ol>
         </div>
 
-        <div className="how-art" aria-hidden="true">
-          <span className="neon">Cinema</span>
-          <span className="how-brand">Same Day Premiere</span>
-          <span className="how-tagline">Same Movies. Same Day. A Bigger Impact.</span>
+        <div className="how-ticket">
+          <Ticket
+            decorative
+            title="Opening night"
+            serial={7}
+            fields={sampleFields}
+            note="Same Movies. Same Day. A Bigger Impact."
+          />
         </div>
       </div>
     </section>

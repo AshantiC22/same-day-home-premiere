@@ -15,6 +15,8 @@ function App() {
   const [checking, setChecking] = useState(true)
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // true when the viewer came in through a "Watch Now" button, so the movie page opens on its Watch tab
+  const [startOnWatch, setStartOnWatch] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
 
   useEffect(() => {
@@ -53,8 +55,9 @@ function App() {
 
   // open a premiere, or go back to the catalog, and start at the top of the page.
   // 'instant' skips the smooth scrolling that anchor links use.
-  function show(id: number | null) {
+  function show(id: number | null, watchNow = false) {
     setSelectedId(id)
+    setStartOnWatch(watchNow)
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
 
@@ -81,7 +84,7 @@ function App() {
             <HowItWorks />
           </>
         ) : (
-          <PremierePage premiereId={selectedId} onBack={() => show(null)} />
+          <PremierePage premiereId={selectedId} startOnWatch={startOnWatch} onBack={() => show(null)} />
         )}
       </div>
 

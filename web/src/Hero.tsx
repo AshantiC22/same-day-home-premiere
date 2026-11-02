@@ -6,7 +6,8 @@ import { backdropFor, posterFor } from './posters'
 import { infoFor } from './movieInfo'
 
 type HeroProps = {
-  onSelect: (id: number) => void
+  // watchNow = true opens the movie page on its Watch tab.
+  onSelect: (id: number, watchNow?: boolean) => void
 }
 
 type Slide = {
@@ -191,8 +192,7 @@ function Hero({ onSelect }: HeroProps) {
                       </a>
                     ) : (
                       <>
-                        {/* TODO: Watch Now should open the Watch tab. For now both open the movie page. */}
-                        <button type="button" className="btn btn-primary" onClick={() => onSelect(id)}>
+                        <button type="button" className="btn btn-primary" onClick={() => onSelect(id, true)}>
                           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                             <path d="M6 4l14 8-14 8z" />
                           </svg>
