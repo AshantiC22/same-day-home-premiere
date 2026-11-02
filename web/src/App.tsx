@@ -18,6 +18,10 @@ function App() {
   // true when the viewer came in through a "Watch Now" button, so the movie page opens on its Watch tab
   const [startOnWatch, setStartOnWatch] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
+  // Adding one to this number rebuilds the carousel and the catalog, so they load fresh data after the admin changes something.
+  const [catalogVersion, setCatalogVersion] = useState(0)
+  // Adding one to this number rebuilds the movie page. Logging out does it, so a film that is playing stops the moment you sign out.
+  const [pageVersion, setPageVersion] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -51,6 +55,7 @@ function App() {
       // even if this fails, clear the screen
     }
     setUser(null)
+    setPageVersion((v) => v + 1)
   }
 
   // open a premiere, or go back to the catalog, and start at the top of the page.
@@ -73,18 +78,18 @@ function App() {
       <div className="view" key={selectedId ?? 'home'}>
         {selectedId === null ? (
           <>
-            <Hero onSelect={show} />
+            <Hero key={catalogVersion} onSelect={show} />
             <main className="container">
-              {user !== null && user.role === 'admin' && <Admin />}
+              {user !== null && user.role === 'admin' && <Admin onChanged={() => setCatalogVersion((v) => v + 1)} />}
               <section id="premieres">
-                <Catalog onSelect={show} />
+                <Catalog key={catalogVersion} onSelect={show} />
               </section>
             </main>
             <TheaterQuality />
             <HowItWorks />
           </>
         ) : (
-          <PremierePage premiereId={selectedId} startOnWatch={startOnWatch} onBack={() => show(null)} />
+          <PremierePage key={pageVersion} premiereId={selectedId} startOnWatch={startOnWatch} onBack={() => show(null)} />
         )}
       </div>
 
